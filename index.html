@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CL25 プログラム相互変換</title>
+<style>
+  :root {
+    --bg: #111417;
+    --panel: #181d22;
+    --panel-deep: #0e1114;
+    --line: #262d35;
+    --line-soft: #1f252c;
+    --text: #d3d9df;
+    --muted: #7f8a94;
+    --accent: #6fae9f;
+    --accent-dim: #35544d;
+    --m1: #79b4a6;   /* CL25-1 */
+    --m2: #c9a878;   /* CL25-2 */
+    --warn: #d0a45c;
+    --ok: #7cb287;
+    --del-bg: rgba(205, 122, 105, 0.10);
+    --del-fg: #d29a8c;
+    --ins-bg: rgba(124, 178, 135, 0.10);
+    --ins-fg: #9cc4a3;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 1360px; margin: 0 auto; padding: 18px 20px 40px; }
+
+  /* ---- ヘッダ ---- */
+  header { border-bottom: 1px solid var(--line-soft); padding-bottom: 14px; margin-bottom: 16px; }
+  h1 { font-size: 19px; font-weight: 600; margin: 0; letter-spacing: .04em; }
+  h1 .amark { color: var(--accent); margin-right: 8px; }
+  .sub { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
+  h2 { font-size: 13.5px; font-weight: 600; margin: 0; color: var(--text); letter-spacing: .03em; }
+
+  /* ---- 操作バー ---- */
+  .controls {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 16px;
+  }
+  .detect { color: var(--muted); font-size: 12.5px; }
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 20px;
+    border: 1px solid var(--line); background: var(--panel-deep);
+    font-size: 12px; color: var(--muted); vertical-align: middle;
+  }
+  .badge.m1 { color: var(--m1); border-color: rgba(121,180,166,.4); }
+  .badge.m2 { color: var(--m2); border-color: rgba(201,168,120,.4); }
+  .badge.mix { color: var(--warn); border-color: rgba(208,164,92,.4); }
+  .badge.ok  { color: var(--ok);  border-color: rgba(124,178,135,.4); }
+  .badge.ng  { color: var(--warn); border-color: rgba(208,164,92,.5); }
+
+  .dir { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .dirbtn {
+    appearance: none; background: var(--panel-deep); color: var(--muted);
+    border: none; padding: 9px 18px; font-size: 13px; cursor: pointer;
+    font-family: inherit; letter-spacing: .03em;
+  }
+  .dirbtn + .dirbtn { border-left: 1px solid var(--line); }
+  .dirbtn:hover { color: var(--text); }
+  .dirbtn.active { background: #202932; color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+  .dirbtn .m1 { color: var(--m1); font-weight: 600; }
+  .dirbtn .m2 { color: var(--m2); font-weight: 600; }
+  .dirbtn.active .arrow { color: var(--accent); }
+  .arrow { color: var(--muted); margin: 0 4px; }
+
+  button, label.btn {
+    font-family: inherit;
+  }
+  .btn {
+    display: inline-block; background: var(--panel-deep); color: var(--text);
+    border: 1px solid var(--line); border-radius: 7px; padding: 6px 14px;
+    font-size: 12.5px; cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  .btn:hover { border-color: var(--accent-dim); background: #171d23; }
+  .btn:disabled { color: #545d66; cursor: default; background: var(--panel-deep); border-color: var(--line-soft); }
+  .primary {
+    background: #1c2b28; color: var(--accent); border: 1px solid var(--accent-dim);
+    border-radius: 8px; padding: 9px 26px; font-size: 13.5px; font-weight: 600;
+    letter-spacing: .06em; cursor: pointer; transition: background .15s, color .15s;
+  }
+  .primary:hover { background: #223631; color: #8ec7b8; }
+  .primary:disabled { background: var(--panel-deep); color: #545d66; border-color: var(--line); cursor: default; }
+  .spacer { flex: 1; }
+
+  /* ---- ペイン ---- */
+  .panes { display: flex; gap: 16px; align-items: stretch; }
+  .pane {
+    flex: 1 1 0; min-width: 0; display: flex; flex-direction: column;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+  }
+  .pane.drag { outline: 1px dashed var(--accent); outline-offset: -6px; }
+  .pane-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .pane-head .tools { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .fname { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+  textarea {
+    width: 100%; height: 46vh; min-height: 300px;
+    background: var(--panel-deep); color: #ccd3da;
+    border: 1px solid var(--line); border-radius: 8px;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+    padding: 10px 12px; white-space: pre; overflow: auto; resize: vertical;
+  }
+  textarea:focus { outline: none; border-color: var(--accent-dim); }
+  textarea[readonly] { color: #c3ccd4; }
+  .pane-foot { margin-top: 7px; color: var(--muted); font-size: 12px; min-height: 18px; }
+  .name-input {
+    background: var(--panel-deep); color: var(--text); border: 1px solid var(--line);
+    border-radius: 7px; padding: 6px 10px; font-family: var(--mono); font-size: 12px; width: 240px;
+  }
+  .name-input:focus { outline: none; border-color: var(--accent-dim); }
+
+  /* ---- 警告 ---- */
+  .warnings {
+    margin-top: 16px; background: var(--panel); border: 1px solid var(--line);
+    border-left: 3px solid var(--warn); border-radius: 8px; padding: 10px 16px;
+  }
+  .warnings ul { margin: 4px 0; padding-left: 20px; }
+  .warnings li { color: var(--warn); font-size: 12.5px; margin: 3px 0; }
+  .warnings .whead { color: var(--warn); font-weight: 600; font-size: 12.5px; }
+
+  /* ---- 変換ログ ---- */
+  .log { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .log-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .summary { color: var(--muted); font-size: 12.5px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+  .chip {
+    background: var(--panel-deep); border: 1px solid var(--line); border-radius: 20px;
+    color: var(--text); padding: 2px 12px; font-size: 12px; font-family: var(--mono);
+  }
+  .chip b { color: var(--accent); font-weight: 600; }
+  .table-wrap { max-height: 300px; overflow: auto; border: 1px solid var(--line-soft); border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th {
+    text-align: left; color: var(--muted); font-weight: 500; font-size: 11.5px;
+    padding: 6px 10px; border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: var(--panel); letter-spacing: .05em;
+  }
+  td { padding: 4px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.num { color: var(--muted); font-family: var(--mono); white-space: nowrap; width: 70px; }
+  td.kind { white-space: nowrap; width: 50px; font-size: 11.5px; color: var(--muted); }
+  td.code { font-family: var(--mono); white-space: pre; }
+  td.code.before { background: var(--del-bg); color: var(--del-fg); }
+  td.code.after  { background: var(--ins-bg); color: var(--ins-fg); }
+  .muted { color: var(--muted); font-size: 12.5px; }
+
+  /* ---- ルール一覧 ---- */
+  details.rules { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+  details.rules summary { cursor: pointer; color: var(--muted); font-size: 13px; user-select: none; }
+  details.rules summary:hover { color: var(--text); }
+  details.rules[open] summary { margin-bottom: 8px; }
+  .rules td, .rules th { font-family: inherit; }
+  .rules td.code { font-family: var(--mono); }
+  .rules td.c1 { color: var(--m1); }
+  .rules td.c2 { color: var(--m2); }
+
+  footer { margin-top: 22px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line-soft); padding-top: 12px; }
+  footer p { margin: 3px 0; }
+
+  @media (max-width: 960px) {
+    .panes { flex-direction: column; }
+    textarea { height: 320px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1><span class="amark">◆</span>CL25 プログラム相互変換</h1>
+    <p class="sub">NC旋盤 CL25-1 ⇔ CL25-2 設備間プログラム変換 — 定義済みルールの置換のみを行い、ルール外の文字・改行・空白は一切変更しません</p>
+  </header>
+
+  <section class="controls">
+    <span class="detect">自動判定: <span id="detectBadge" class="badge">—</span></span>
+    <div class="dir" role="group" aria-label="変換方向">
+      <button id="dir1to2" class="dirbtn active" type="button"><span class="m1">CL25-1</span><span class="arrow">→</span><span class="m2">CL25-2</span></button>
+      <button id="dir2to1" class="dirbtn" type="button"><span class="m2">CL25-2</span><span class="arrow">→</span><span class="m1">CL25-1</span></button>
+    </div>
+    <span class="spacer"></span>
+    <button id="convertBtn" class="primary" type="button" disabled>変 換 実 行</button>
+  </section>
+
+  <main class="panes">
+    <section class="pane" id="inputPane">
+      <div class="pane-head">
+        <h2>入力プログラム</h2>
+        <span id="inName" class="fname"></span>
+        <div class="tools">
+          <label class="btn" for="fileInput">ファイルを開く</label>
+          <input type="file" id="fileInput" style="display:none">
+          <button id="clearBtn" class="btn" type="button">クリア</button>
+        </div>
+      </div>
+      <textarea id="inputArea" spellcheck="false" wrap="off"
+        placeholder="ここにNCプログラムを貼り付け、またはファイルをドラッグ＆ドロップ&#10;（Ctrl+Enter で変換実行）"></textarea>
+      <div class="pane-foot" id="inStats"></div>
+    </section>
+
+    <section class="pane">
+      <div class="pane-head">
+        <h2>変換結果</h2>
+        <span id="roundtrip" class="badge" style="display:none"></span>
+        <div class="tools">
+          <button id="copyBtn" class="btn" type="button" disabled>コピー</button>
+          <input id="outName" class="name-input" title="保存ファイル名" placeholder="保存ファイル名">
+          <button id="saveBtn" class="btn" type="button" disabled>保存 (.txt)</button>
+        </div>
+      </div>
+      <textarea id="outputArea" spellcheck="false" wrap="off" readonly
+        placeholder="変換結果がここに表示されます"></textarea>
+      <div class="pane-foot" id="outStats"></div>
+    </section>
+  </main>
+
+  <section id="warnings" class="warnings" style="display:none">
+    <div class="whead">⚠ 警告</div>
+    <ul id="warnList"></ul>
+  </section>
+
+  <section class="log">
+    <div class="log-head">
+      <h2>変換ログ</h2>
+      <span id="summary" class="summary">まだ変換していません。</span>
+    </div>
+    <div id="chips" class="chips" style="display:none"></div>
+    <div class="table-wrap" id="changesWrap" style="display:none">
+      <table>
+        <thead><tr><th>行</th><th>種別</th><th>変換前</th><th>変換後</th></tr></thead>
+        <tbody id="changesBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <details class="rules">
+    <summary>変換ルール一覧（固定・雛形プログラムの差分から確定）</summary>
+    <div class="table-wrap" style="max-height:none">
+      <table>
+        <thead><tr><th>CL25-1</th><th>CL25-2</th><th>区分</th><th>備考</th></tr></thead>
+        <tbody id="ruleBody"></tbody>
+      </table>
+    </div>
+    <p class="muted">上記ルール以外の文字・改行・空白・コメントには一切手を加えません。コメント ( ) 内はMコード置換の対象外です（機械名コメントを除く）。</p>
+  </details>
+
+  <footer>
+    <p>・変換はルールベースの置換のみです。変換結果は必ず内容を確認のうえ使用してください。</p>
+    <p>・改行コードは読み込んだファイルのまま保持します（貼り付け入力時は CRLF で保存）。</p>
+    <p>・「逆変換一致」は変換結果を逆方向に再変換して入力と完全一致するかの自己チェックです。</p>
+  </footer>
+
+</div>
+
+<script src="converter.js"></script>
+<script>
+(function () {
+  'use strict';
+  var C = window.CL25Converter;
+
+  // ---- 要素 ----
+  var $ = function (id) { return document.getElementById(id); };
+  var inputArea = $('inputArea'), outputArea = $('outputArea');
+  var inName = $('inName'), inStats = $('inStats'), outStats = $('outStats');
+  var detectBadge = $('detectBadge'), roundtrip = $('roundtrip');
+  var dir1to2 = $('dir1to2'), dir2to1 = $('dir2to1');
+  var convertBtn = $('convertBtn'), clearBtn = $('clearBtn'), fileInput = $('fileInput');
+  var copyBtn = $('copyBtn'), saveBtn = $('saveBtn'), outName = $('outName');
+  var warnBox = $('warnings'), warnList = $('warnList');
+  var summary = $('summary'), chips = $('chips');
+  var changesWrap = $('changesWrap'), changesBody = $('changesBody');
+  var inputPane = $('inputPane');
+
+  // ---- 状態 ----
+  var state = {
+    direction: '1to2',
+    userOverrodeDir: false,
+    rawInput: null,    // 読み込んだファイルの原文（改行コードそのまま）
+    fileName: '',
+    eol: '\r\n',       // 貼り付け・編集時に適用する改行コード（読込ファイル準拠）
+    lastResult: null,  // 直近の変換結果（真の改行を保持。保存・コピーはこちらを使用）
+    lastSource: null
+  };
+
+  function normalizeLf(s) { return s.replace(/\r\n|\r/g, '\n'); }
+  function detectEol(s) {
+    if (s.indexOf('\r\n') >= 0) return '\r\n';
+    if (s.indexOf('\r') >= 0) return '\r';
+    if (s.indexOf('\n') >= 0) return '\n';
+    return '\r\n';
+  }
+  function eolLabel(eol) { return eol === '\r\n' ? 'CRLF' : (eol === '\r' ? 'CR' : 'LF'); }
+
+  // textarea は改行を LF に正規化するため、未編集なら原文を、
+  // 編集・貼り付け時は元ファイルの改行コード（既定 CRLF）を復元して返す
+  function getSourceText() {
+    var v = inputArea.value;
+    if (state.rawInput !== null && normalizeLf(state.rawInput) === v) return state.rawInput;
+    return v.replace(/\n/g, state.eol);
+  }
+
+  function lineCount(s) { return s === '' ? 0 : s.split(/\r\n|\r|\n/).length; }
+
+  // ---- 表示ヘルパ ----
+  function setDetectBadge(det) {
+    detectBadge.className = 'badge';
+    if (!det) { detectBadge.textContent = '—'; return; }
+    if (det.machine === 'CL25-1') {
+      detectBadge.textContent = 'CL25-1' + (det.byName ? '（機械名コメント）' : '（コードから推定）');
+      detectBadge.className = 'badge m1';
+    } else if (det.machine === 'CL25-2') {
+      detectBadge.textContent = 'CL25-2' + (det.byName ? '（機械名コメント）' : '（コードから推定）');
+      detectBadge.className = 'badge m2';
+    } else if (det.mixed) {
+      detectBadge.textContent = '判定不可（両設備のコードが混在）';
+      detectBadge.className = 'badge mix';
+    } else {
+      detectBadge.textContent = '判定不可';
+    }
+  }
+
+  function setDirection(dir, byUser) {
+    state.direction = dir;
+    if (byUser) state.userOverrodeDir = true;
+    dir1to2.className = 'dirbtn' + (dir === '1to2' ? ' active' : '');
+    dir2to1.className = 'dirbtn' + (dir === '2to1' ? ' active' : '');
+  }
+
+  function invalidateOutput() {
+    outputArea.value = '';
+    state.lastResult = null;
+    state.lastSource = null;
+    copyBtn.disabled = true;
+    saveBtn.disabled = true;
+    roundtrip.style.display = 'none';
+    warnBox.style.display = 'none';
+    chips.style.display = 'none';
+    changesWrap.style.display = 'none';
+    changesBody.innerHTML = '';
+    outStats.textContent = '';
+    summary.textContent = 'まだ変換していません。';
+  }
+
+  function renderWarnings(list) {
+    warnList.innerHTML = '';
+    if (!list || list.length === 0) { warnBox.style.display = 'none'; return; }
+    for (var i = 0; i < list.length; i++) {
+      var li = document.createElement('li');
+      li.textContent = list[i];
+      warnList.appendChild(li);
+    }
+    warnBox.style.display = '';
+  }
+
+  function orderedCountIds(dir) {
+    var ids = [];
+    var rules = C.TOKEN_RULES[dir];
+    for (var i = 0; i < rules.length; i++) ids.push(rules[i].id);
+    ids.push(dir === '1to2' ? '(CL25-1)→(CL25-2)' : '(CL25-2)→(CL25-1)');
+    ids.push(dir === '1to2' ? '終端M3S1/M5挿入' : '終端M3S1/M5削除');
+    return ids;
+  }
+
+  function renderChips(counts, dir) {
+    chips.innerHTML = '';
+    var ids = orderedCountIds(dir);
+    var any = false;
+    for (var i = 0; i < ids.length; i++) {
+      var n = counts[ids[i]];
+      if (!n) continue;
+      any = true;
+      var span = document.createElement('span');
+      span.className = 'chip';
+      span.textContent = ids[i] + ' ';
+      var b = document.createElement('b');
+      b.textContent = '×' + n;
+      span.appendChild(b);
+      chips.appendChild(span);
+    }
+    chips.style.display = any ? '' : 'none';
+  }
+
+  function renderChanges(changes) {
+    changesBody.innerHTML = '';
+    if (!changes || changes.length === 0) { changesWrap.style.display = 'none'; return; }
+    var kindLabel = { replace: '置換', insert: '挿入', delete: '削除' };
+    for (var i = 0; i < changes.length; i++) {
+      var ch = changes[i];
+      var tr = document.createElement('tr');
+      var tdNo = document.createElement('td');
+      tdNo.className = 'num';
+      tdNo.textContent = ch.type === 'insert' ? (ch.line + ' 直後') : String(ch.line);
+      var tdKind = document.createElement('td');
+      tdKind.className = 'kind';
+      tdKind.textContent = kindLabel[ch.type] || ch.type;
+      var tdBefore = document.createElement('td');
+      tdBefore.className = 'code' + (ch.before !== null ? ' before' : '');
+      tdBefore.textContent = ch.before !== null ? ch.before : '—';
+      var tdAfter = document.createElement('td');
+      tdAfter.className = 'code' + (ch.after !== null ? ' after' : '');
+      tdAfter.textContent = ch.after !== null ? ch.after : '（行削除）';
+      tr.appendChild(tdNo); tr.appendChild(tdKind); tr.appendChild(tdBefore); tr.appendChild(tdAfter);
+      changesBody.appendChild(tr);
+    }
+    changesWrap.style.display = '';
+  }
+
+  function renderRuleTable() {
+    var body = $('ruleBody');
+    var rows = C.RULE_TABLE;
+    for (var i = 0; i < rows.length; i++) {
+      var tr = document.createElement('tr');
+      var t1 = document.createElement('td'); t1.className = 'code c1'; t1.textContent = rows[i].cl251;
+      var t2 = document.createElement('td'); t2.className = 'code c2'; t2.textContent = rows[i].cl252;
+      var t3 = document.createElement('td'); t3.className = 'kind'; t3.textContent = rows[i].kind;
+      var t4 = document.createElement('td'); t4.className = 'muted'; t4.textContent = rows[i].note;
+      tr.appendChild(t1); tr.appendChild(t2); tr.appendChild(t3); tr.appendChild(t4);
+      body.appendChild(tr);
+    }
+  }
+
+  function suggestOutName(name, dir) {
+    var from = dir === '1to2' ? '1' : '2';
+    var to = dir === '1to2' ? '2' : '1';
+    if (name) {
+      var pairs = [['CL-25-' + from, 'CL-25-' + to], ['CL25-' + from, 'CL25-' + to], ['CL25' + from, 'CL25' + to]];
+      for (var i = 0; i < pairs.length; i++) {
+        if (name.indexOf(pairs[i][0]) >= 0) return name.split(pairs[i][0]).join(pairs[i][1]);
+      }
+      var dot = name.lastIndexOf('.');
+      var base = dot > 0 ? name.slice(0, dot) : name;
+      var ext = dot > 0 ? name.slice(dot) : '.txt';
+      return base + '_CL25' + to + ext;
+    }
+    return 'CL25' + to + '_converted.txt';
+  }
+
+  // ---- 入力まわり ----
+  var detectTimer = null;
+  function refreshDetect() {
+    var v = inputArea.value;
+    var det = v === '' ? null : C.detectMachine(v);
+    setDetectBadge(det);
+    if (det && det.machine && !state.userOverrodeDir) {
+      setDirection(det.machine === 'CL25-1' ? '1to2' : '2to1', false);
+    }
+    inStats.textContent = v === '' ? '' :
+      lineCount(v) + ' 行 / 改行: ' + eolLabel(state.rawInput !== null ? detectEol(state.rawInput) : state.eol);
+  }
+  // immediate: ファイル読込・クリア時は即時更新、手入力時はデバウンス
+  function afterInputChanged(immediate) {
+    invalidateOutput();
+    convertBtn.disabled = (inputArea.value === '');
+    if (detectTimer) clearTimeout(detectTimer);
+    if (immediate) refreshDetect();
+    else detectTimer = setTimeout(refreshDetect, 150);
+  }
+
+  function loadFile(file) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      state.rawInput = String(reader.result);
+      state.eol = detectEol(state.rawInput);
+      state.fileName = file.name;
+      state.userOverrodeDir = false;
+      inName.textContent = file.name;
+      inputArea.value = state.rawInput; // 表示は LF 正規化されるが原文は state.rawInput に保持
+      afterInputChanged(true);
+    };
+    reader.readAsText(file);
+  }
+
+  // ---- 変換 ----
+  function runConvert() {
+    var src = getSourceText();
+    if (src === '') return;
+    var res = C.convert(src, state.direction);
+    state.lastResult = res;
+    state.lastSource = src;
+    outputArea.value = res.text;
+    copyBtn.disabled = false;
+    saveBtn.disabled = false;
+
+    renderWarnings(res.warnings);
+    renderChips(res.counts, state.direction);
+    renderChanges(res.changes);
+
+    var nRep = 0, nIns = 0, nDel = 0;
+    for (var i = 0; i < res.changes.length; i++) {
+      var t = res.changes[i].type;
+      if (t === 'replace') nRep++; else if (t === 'insert') nIns++; else if (t === 'delete') nDel++;
+    }
+    var M = C.MACHINES[state.direction];
+    summary.textContent = M.from + ' → ' + M.to + ' 変換完了 — 置換 ' + nRep + ' 行 / 挿入 ' + nIns + ' 行 / 削除 ' + nDel + ' 行';
+
+    // 自己チェック: 逆変換して入力と完全一致するか
+    var back = C.convert(res.text, C.reverse(state.direction));
+    var ok = (back.text === src);
+    roundtrip.style.display = '';
+    roundtrip.className = 'badge ' + (ok ? 'ok' : 'ng');
+    roundtrip.textContent = ok ? '逆変換一致 ✓' : '逆変換不一致 — 要確認';
+    roundtrip.title = ok
+      ? '変換結果を逆方向に再変換すると入力と完全に一致しました（可逆性確認）'
+      : '逆変換が入力と一致しません。警告と変更一覧を確認してください。';
+
+    outName.value = suggestOutName(state.fileName, state.direction);
+    outStats.textContent = lineCount(res.text) + ' 行 / 改行: ' + eolLabel(detectEol(res.text));
+  }
+
+  // ---- 保存・コピー ----
+  function saveFile() {
+    if (!state.lastResult) return;
+    var text = state.lastResult.text; // 真の改行コードを保持したテキスト
+    var name = outName.value || 'converted.txt';
+    var blob = new Blob([text], { type: 'text/plain' });
+    if (navigator.msSaveBlob) { navigator.msSaveBlob(blob, name); return; }
+    var a = document.createElement('a');
+    var url = URL.createObjectURL(blob);
+    a.href = url; a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
+  }
+
+  function flash(btn, text) {
+    var orig = btn.textContent;
+    btn.textContent = text;
+    setTimeout(function () { btn.textContent = orig; }, 1200);
+  }
+
+  function copyOut() {
+    if (!state.lastResult) return;
+    var text = state.lastResult.text;
+    function fallback() {
+      outputArea.focus();
+      outputArea.select();
+      try { document.execCommand('copy'); flash(copyBtn, 'コピーしました'); } catch (e) { flash(copyBtn, '失敗'); }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { flash(copyBtn, 'コピーしました'); }, fallback);
+    } else {
+      fallback();
+    }
+  }
+
+  // ---- イベント ----
+  inputArea.addEventListener('input', function () {
+    // 手入力・貼り付けが入ったら「原文のまま」ではなくなる可能性がある
+    if (state.rawInput !== null && normalizeLf(state.rawInput) !== inputArea.value) {
+      inName.textContent = state.fileName ? state.fileName + '（編集あり）' : '';
+    }
+    afterInputChanged();
+  });
+  inputArea.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !convertBtn.disabled) runConvert();
+  });
+  dir1to2.addEventListener('click', function () { setDirection('1to2', true); invalidateOutput(); });
+  dir2to1.addEventListener('click', function () { setDirection('2to1', true); invalidateOutput(); });
+  convertBtn.addEventListener('click', runConvert);
+  clearBtn.addEventListener('click', function () {
+    inputArea.value = '';
+    state.rawInput = null; state.fileName = ''; state.eol = '\r\n'; state.userOverrodeDir = false;
+    inName.textContent = ''; inStats.textContent = '';
+    setDetectBadge(null);
+    afterInputChanged(true);
+  });
+  fileInput.addEventListener('change', function () {
+    if (fileInput.files && fileInput.files[0]) loadFile(fileInput.files[0]);
+    fileInput.value = '';
+  });
+  copyBtn.addEventListener('click', copyOut);
+  saveBtn.addEventListener('click', saveFile);
+
+  // ドラッグ＆ドロップ（入力ペイン）
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    inputPane.addEventListener(ev, function (e) { e.preventDefault(); e.stopPropagation(); inputPane.classList.add('drag'); });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    inputPane.addEventListener(ev, function (e) { e.preventDefault(); e.stopPropagation(); inputPane.classList.remove('drag'); });
+  });
+  inputPane.addEventListener('drop', function (e) {
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+  });
+
+  // ---- 初期化 ----
+  renderRuleTable();
+  setDirection('1to2', false);
+})();
+</script>
+</body>
+</html>
